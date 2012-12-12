@@ -22,12 +22,12 @@ public:
 };
 
 template <class T, typename K>
-int intervalStart(const Interval<T,K>& i) {
+K intervalStart(const Interval<T,K>& i) {
     return i.start;
 }
 
 template <class T, typename K>
-int intervalStop(const Interval<T,K>& i) {
+K intervalStop(const Interval<T,K>& i) {
     return i.stop;
 }
 
@@ -45,10 +45,16 @@ public:
     }
 };
 
+
+template <class T, typename K>
+class IntervalTreeView;
+
+
 template <class T, typename K = int>
 class IntervalTree {
 
 public:
+	friend class IntervalTreeView<T, K>;
     typedef Interval<T,K> interval;
     typedef vector<interval> intervalVector;
     typedef IntervalTree<T,K> intervalTree;
@@ -56,19 +62,22 @@ public:
     intervalVector intervals;
     intervalTree* left;
     intervalTree* right;
-    int center;
+	intervalTree* parent;
+    K center;
 
     IntervalTree<T,K>(void)
         : left(NULL)
         , right(NULL)
+		, parent(NULL)
         , center(0)
     { }
 
     IntervalTree<T,K>(const intervalTree& other) {
         center = other.center;
         intervals = other.intervals;
+		parent = other.parent;
         if (other.left) {
-            left = (intervalTree*) malloc(sizeof(intervalTree));
+            left = new intervalTree();
             *left = *other.left;
         } else {
             left = NULL;
@@ -84,6 +93,7 @@ public:
     IntervalTree<T,K>& operator=(const intervalTree& other) {
         center = other.center;
         intervals = other.intervals;
+		parent = other.parent;
         if (other.left) {
             left = new intervalTree();
             *left = *other.left;
@@ -101,14 +111,16 @@ public:
 
     IntervalTree<T,K>(
             intervalVector& ivals,
+			intervalTree* parent = NULL,
             unsigned int depth = 16,
             unsigned int minbucket = 64,
-            int leftextent = 0,
-            int rightextent = 0,
+            K leftextent = 0,
+            K rightextent = 0,
             unsigned int maxbucket = 512
             )
         : left(NULL)
         , right(NULL)
+		, parent(parent)
     {
 
         --depth;
@@ -121,9 +133,8 @@ public:
                 sort(ivals.begin(), ivals.end(), intervalStartSorter);
             }
 
-            int leftp = 0;
-            int rightp = 0;
-            int centerp = 0;
+            K leftp;
+            K rightp;
             
             if (leftextent || rightextent) {
                 leftp = leftextent;
@@ -137,7 +148,7 @@ public:
             }
 
             //centerp = ( leftp + rightp ) / 2;
-            centerp = ivals.at(ivals.size() / 2).start;
+            K centerp = ivals.at(ivals.size() / 2).start;
             center = centerp;
 
             intervalVector lefts;
@@ -155,10 +166,10 @@ public:
             }
 
             if (!lefts.empty()) {
-                left = new intervalTree(lefts, depth, minbucket, leftp, centerp);
+                left = new intervalTree(lefts, this, depth, minbucket, leftp, centerp);
             }
             if (!rights.empty()) {
-                right = new intervalTree(rights, depth, minbucket, centerp, rightp);
+                right = new intervalTree(rights, this, depth, minbucket, centerp, rightp);
             }
         }
     }
@@ -214,6 +225,82 @@ public:
         }
     }
 
+};
+
+
+template <class T, typename K = int>
+class IntervalTreeView {
+private:
+	K start;
+	K stop;
+	vector< IntervalTree<T, K>* > toAnalize;
+	IntervalTree<T, K>* currentTree;
+	size_t currentIndex;
+public:
+	IntervalTreeView(
+		IntervalTree<T, K> *tree, K start, K stop)
+		: start(start)
+		, stop(stop)
+		, currentTree(NULL)
+		, currentIndex(-1)
+	{
+		currentTree = tree;
+		currentIndex = 0;
+	}
+
+	bool at_end()
+	{
+		return currentTree == NULL;
+	}
+
+	Interval<T, K>* get_interval()
+	{
+		return &(currentTree->intervals[currentIndex]);
+	}
+
+	T* get_element()
+	{
+		return &(get_interval()->value);
+	}
+
+	void move_next() {
+		if(at_end())
+			throw new exception("no more elements");
+		Interval<T, K>* interval;
+		do
+		{
+			if(currentIndex < currentTree->intervals.size() - 1)
+				currentIndex++;
+			else
+			{
+				if (currentTree->left && start <= currentTree->center)
+					toAnalize.push_back(currentTree->left);
+
+				if (currentTree->right && stop >= currentTree->center)
+					toAnalize.push_back(currentTree->right);
+
+				do
+				{
+					if(toAnalize.size() == 0)
+					{
+						currentTree = NULL;
+						currentIndex = -1;
+					}
+					else
+					{
+						currentTree = toAnalize.back();
+						currentIndex = 0;
+						toAnalize.pop_back();
+					}
+				}
+				while(currentTree != NULL && currentTree->intervals.size() == 0);
+			}
+			if(currentTree != NULL)
+				interval = get_interval();
+		}
+		while(currentTree != NULL && 
+			!(stop >= interval->start && start <= interval->stop));
+    }
 };
 
 #endif
